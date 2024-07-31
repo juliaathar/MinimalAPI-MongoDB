@@ -10,9 +10,9 @@ namespace MinimalAPIMongoDB.Controller
     [ApiController]
     public class ClientController : ControllerBase
     {
-   
-        private readonly IMongoCollection<Client>? _client;
-        private readonly IMongoCollection<User>? _user;
+
+        private readonly IMongoCollection<Client> _client;
+        private readonly IMongoCollection<User> _user;
 
         public ClientController(MongoDbService mongoDbService)
         {
@@ -20,6 +20,7 @@ namespace MinimalAPIMongoDB.Controller
             _user = mongoDbService.GetDatabase.GetCollection<User>("User");
         }
 
+     
         [HttpGet]
         public async Task<ActionResult<List<Client>>> Get()
         {
@@ -34,14 +35,18 @@ namespace MinimalAPIMongoDB.Controller
             }
         }
 
+
         [HttpGet("{id}")]
-        public async Task<ActionResult> GetById(string id)
+        public async Task<ActionResult<Client>> GetById(string id)
         {
             try
             {
                 var clientFinded = await _client.Find(c => c.Id == id).FirstOrDefaultAsync();
-
-                return clientFinded is not null ? Ok(clientFinded) : NotFound();
+                if (clientFinded == null)
+                {
+                    return NotFound();
+                }
+                return Ok(clientFinded);
             }
             catch (Exception e)
             {
@@ -50,23 +55,22 @@ namespace MinimalAPIMongoDB.Controller
         }
 
         [HttpPost]
-        public async Task<ActionResult> Post(Client novoClient)
+        public async Task<ActionResult> Post([FromBody] Client novoClient)
         {
             try
             {
+                
                 var userFinded = await _user.Find(u => u.Id == novoClient.UserId).FirstOrDefaultAsync();
 
-                if (userFinded is not null)
+                if (userFinded == null)
                 {
-                    novoClient.user = userFinded;
-                    await _client.InsertOneAsync(novoClient);
-                }
-                else
-                {
-                    return NotFound("Usuario nao encontrado");
+                    return NotFound("Usuário não encontrado");
                 }
 
-                return StatusCode(201);
+                novoClient.User = userFinded; 
+                await _client.InsertOneAsync(novoClient);
+
+                return CreatedAtAction(nameof(GetById), new { id = novoClient.Id }, novoClient);
             }
             catch (Exception e)
             {
@@ -74,15 +78,23 @@ namespace MinimalAPIMongoDB.Controller
             }
         }
 
-        [HttpPut]
-        public async Task<ActionResult> Update(Client atualizado)
+       
+        [HttpPut("{id}")]
+        public async Task<ActionResult> Update(string id, [FromBody] Client atualizado)
         {
             try
             {
-                var filter = Builders<Client>.Filter.Eq(c => c.Id, atualizado.Id);
+                
+                var existingClient = await _client.Find(c => c.Id == id).FirstOrDefaultAsync();
+                if (existingClient == null)
+                {
+                    return NotFound("Cliente não encontrado");
+                }
 
+                var filter = Builders<Client>.Filter.Eq(c => c.Id, id);
                 await _client.ReplaceOneAsync(filter, atualizado);
-                return Ok();
+
+                return NoContent();
             }
             catch (Exception e)
             {
@@ -90,13 +102,20 @@ namespace MinimalAPIMongoDB.Controller
             }
         }
 
-        [HttpDelete]
+      
+        [HttpDelete("{id}")]
         public async Task<ActionResult> Delete(string id)
         {
             try
             {
-                await _client.FindOneAndDeleteAsync(c => c.Id == id);
-                return StatusCode(204);
+                var deleteResult = await _client.DeleteOneAsync(c => c.Id == id);
+
+                if (deleteResult.DeletedCount == 0)
+                {
+                    return NotFound("Cliente não encontrado");
+                }
+
+                return NoContent();
             }
             catch (Exception e)
             {
